@@ -260,6 +260,11 @@ def main():
     save_report(labels, preds, class_names, args.save_dir)
     summary = save_summary(top1, top5, per_class_acc, args.save_dir)
 
+    # 儲存推論結果，供後續分析使用（不需要重跑模型）
+    np.save(os.path.join(args.save_dir, 'labels.npy'), labels)
+    np.save(os.path.join(args.save_dir, 'preds.npy'),  preds)
+    print(f"  Saved: labels.npy / preds.npy")
+
     print("\n========== Summary ==========")
     print(f"Top-1 Accuracy : {top1:.2f}%")
     print(f"Top-5 Accuracy : {top5:.2f}%")
