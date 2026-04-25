@@ -66,7 +66,7 @@ def main():
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=60, gamma=0.1)
 
     start_epoch = 0
     best_acc    = 0.0
