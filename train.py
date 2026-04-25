@@ -1,9 +1,9 @@
 import argparse
+import json
 import os
-import time
 import warnings
 
-from tqdm import tqdm  # 記得在檔案頂部 import
+from tqdm import tqdm
 
 # Suppress NumPy 2.4+ deprecation warning from torchvision CIFAR loader
 warnings.filterwarnings('ignore', message='.*dtype.*align should be passed as Python or NumPy boolean.*')
@@ -17,7 +17,6 @@ from torchvision import datasets, transforms
 
 from model import get_model
 from utils import accuracy, save_checkpoint, AverageMeter
-
 
 
 def parse_args():
@@ -40,7 +39,6 @@ def main():
     os.makedirs(args.save_dir, exist_ok=True)
 
     device = torch.device(args.device if torch.cuda.is_available() and args.device.startswith("cuda") else "cpu")
-
     print(f"Using device: {device}")
 
     transform_train = transforms.Compose([
@@ -56,34 +54,31 @@ def main():
     ])
 
     train_dataset = datasets.CIFAR100(root=args.data_dir, train=True, download=True, transform=transform_train)
-    test_dataset = datasets.CIFAR100(root=args.data_dir, train=False, download=True, transform=transform_test)
+    test_dataset  = datasets.CIFAR100(root=args.data_dir, train=False, download=True, transform=transform_test)
 
     pin_memory = device.type == "cuda"
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=pin_memory,
-    )
-    val_loader = DataLoader(
-        test_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=pin_memory,
-    )
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+                              num_workers=args.num_workers, pin_memory=pin_memory)
+    val_loader   = DataLoader(test_dataset,  batch_size=args.batch_size, shuffle=False,
+                              num_workers=args.num_workers, pin_memory=pin_memory)
 
-    model = get_model(num_classes=100)
-    model = model.to(device)
+    model = get_model(num_classes=100).to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
     start_epoch = 0
-    best_acc = 0.0
+    best_acc    = 0.0
 
+    # ── 讀取已有的 training log（Resume 時保留歷史紀錄）──────────────
+    log_path     = os.path.join(args.save_dir, "training_log.json")
+    training_log = []
+    if os.path.exists(log_path):
+        with open(log_path) as f:
+            training_log = json.load(f)
+
+    # ── Resume ────────────────────────────────────────────────────
     if args.resume:
         if os.path.isfile(args.resume):
             print(f"Loading checkpoint '{args.resume}'")
@@ -92,28 +87,41 @@ def main():
             optimizer.load_state_dict(checkpoint["optimizer"])
             scheduler.load_state_dict(checkpoint["scheduler"])
             start_epoch = checkpoint["epoch"] + 1
-            best_acc = checkpoint["best_acc"]
+            best_acc    = checkpoint["best_acc"]
             print(f"Resumed from epoch {start_epoch}, best accuracy {best_acc:.2f}%")
         else:
             print(f"No checkpoint found at '{args.resume}'")
 
+    # ── Training loop ─────────────────────────────────────────────
     for epoch in range(start_epoch, args.epochs):
         print(f"Epoch [{epoch + 1}/{args.epochs}]")
         train_loss, train_acc = train(train_loader, model, criterion, optimizer, device)
-        val_loss, val_acc = validate(val_loader, model, criterion, device)
+        val_loss,   val_acc   = validate(val_loader, model, criterion, device)
 
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
         print(f"Val   Loss: {val_loss:.4f} | Val   Acc: {val_acc:.2f}%")
 
-        is_best = val_acc > best_acc
+        is_best  = val_acc > best_acc
         best_acc = max(val_acc, best_acc)
+
         save_checkpoint({
-            "epoch": epoch,
+            "epoch":      epoch,
             "state_dict": model.state_dict(),
-            "best_acc": best_acc,
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
+            "best_acc":   best_acc,
+            "optimizer":  optimizer.state_dict(),
+            "scheduler":  scheduler.state_dict(),
         }, is_best, args.save_dir)
+
+        # ── 寫入 training log ─────────────────────────────────────
+        training_log.append({
+            "epoch":      epoch + 1,
+            "train_loss": round(train_loss, 4),
+            "train_acc":  round(train_acc, 4),
+            "val_loss":   round(val_loss, 4),
+            "val_acc":    round(val_acc, 4),
+        })
+        with open(log_path, "w") as f:
+            json.dump(training_log, f, indent=2)
 
         scheduler.step()
 
@@ -123,28 +131,21 @@ def main():
 def train(loader, model, criterion, optimizer, device):
     model.train()
     loss_meter = AverageMeter()
-    acc_meter = AverageMeter()
+    acc_meter  = AverageMeter()
 
-    # 使用 tqdm 包裝 loader
     pbar = tqdm(loader, desc="Training", leave=False)
-    
     for inputs, targets in pbar:
         inputs, targets = inputs.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        loss    = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
 
         acc = accuracy(outputs, targets)
         loss_meter.update(loss.item(), inputs.size(0))
         acc_meter.update(acc, inputs.size(0))
-        
-        # 在進度條後方即時更新當前的 Loss 和 Acc
-        pbar.set_postfix({
-            'loss': f'{loss_meter.avg:.4f}',
-            'acc': f'{acc_meter.avg:.2f}%'
-        })
+        pbar.set_postfix({'loss': f'{loss_meter.avg:.4f}', 'acc': f'{acc_meter.avg:.2f}%'})
 
     return loss_meter.avg, acc_meter.avg
 
@@ -152,64 +153,21 @@ def train(loader, model, criterion, optimizer, device):
 def validate(loader, model, criterion, device):
     model.eval()
     loss_meter = AverageMeter()
-    acc_meter = AverageMeter()
+    acc_meter  = AverageMeter()
 
-    # 驗證集也可以加進度條
     pbar = tqdm(loader, desc="Validating", leave=False)
-    
     with torch.no_grad():
         for inputs, targets in pbar:
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            loss    = criterion(outputs, targets)
 
             acc = accuracy(outputs, targets)
             loss_meter.update(loss.item(), inputs.size(0))
             acc_meter.update(acc, inputs.size(0))
-            
-            pbar.set_postfix({
-                'loss': f'{loss_meter.avg:.4f}',
-                'acc': f'{acc_meter.avg:.2f}%'
-            })
+            pbar.set_postfix({'loss': f'{loss_meter.avg:.4f}', 'acc': f'{acc_meter.avg:.2f}%'})
 
     return loss_meter.avg, acc_meter.avg
-
-# def train(loader, model, criterion, optimizer, device):
-#     model.train()
-#     loss_meter = AverageMeter()
-#     acc_meter = AverageMeter()
-
-#     for inputs, targets in loader:
-#         inputs, targets = inputs.to(device), targets.to(device)
-#         optimizer.zero_grad()
-#         outputs = model(inputs)
-#         loss = criterion(outputs, targets)
-#         loss.backward()
-#         optimizer.step()
-
-#         acc = accuracy(outputs, targets)
-#         loss_meter.update(loss.item(), inputs.size(0))
-#         acc_meter.update(acc, inputs.size(0))
-
-#     return loss_meter.avg, acc_meter.avg
-
-
-# def validate(loader, model, criterion, device):
-#     model.eval()
-#     loss_meter = AverageMeter()
-#     acc_meter = AverageMeter()
-
-#     with torch.no_grad():
-#         for inputs, targets in loader:
-#             inputs, targets = inputs.to(device), targets.to(device)
-#             outputs = model(inputs)
-#             loss = criterion(outputs, targets)
-
-#             acc = accuracy(outputs, targets)
-#             loss_meter.update(loss.item(), inputs.size(0))
-#             acc_meter.update(acc, inputs.size(0))
-
-#     return loss_meter.avg, acc_meter.avg
 
 
 if __name__ == "__main__":
