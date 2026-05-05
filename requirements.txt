@@ -3,4 +3,6 @@ torchvision>=0.15.0
 tqdm
 matplotlib>=3.0
 scikit-learn>=1.0
-mlflow>=2.0
+mlflow>=3.0
+gradio>=4.0
+Pillow>=9.0
