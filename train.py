@@ -34,9 +34,24 @@ def parse_args():
     parser.add_argument("--device",       default="cuda" if torch.cuda.is_available() else "cpu", type=str, help="Device to train on")
     parser.add_argument("--save-dir",     default="./checkpoints", type=str,   help="Directory to save models and logs")
     parser.add_argument("--resume",       default="",              type=str,   help="Path to checkpoint to resume from")
-    parser.add_argument("--mlflow-dir",   default="./mlruns",      type=str,   help="MLflow tracking directory")
-    parser.add_argument("--exp-name",     default="CIFAR100",      type=str,   help="MLflow experiment name")
+    # ── MLflow 設定 ────────────────────────────────────────────────────────
+    # 本地模式：  --mlflow-dir ./mlruns
+    # Server模式：--mlflow-server http://your-server:5000
+    parser.add_argument("--mlflow-dir",    default="./mlruns",  type=str, help="MLflow local tracking directory (used when --mlflow-server is not set)")
+    parser.add_argument("--mlflow-server", default="",          type=str, help="MLflow tracking server URI (e.g. http://localhost:5000)")
+    parser.add_argument("--exp-name",      default="CIFAR100",  type=str, help="MLflow experiment name")
     return parser.parse_args()
+
+
+def setup_mlflow(args):
+    """設定 MLflow Tracking URI：優先使用 Server，否則使用本地目錄"""
+    if args.mlflow_server:
+        mlflow.set_tracking_uri(args.mlflow_server)
+        print(f"MLflow Tracking Server: {args.mlflow_server}")
+    else:
+        mlflow.set_tracking_uri(f"file://{os.path.abspath(args.mlflow_dir)}")
+        print(f"MLflow Local Dir: {os.path.abspath(args.mlflow_dir)}")
+    mlflow.set_experiment(args.exp_name)
 
 
 def main():
@@ -47,8 +62,7 @@ def main():
     print(f"Using device: {device}")
 
     # ── MLflow 設定 ───────────────────────────────────────────────
-    mlflow.set_tracking_uri(f"file://{os.path.abspath(args.mlflow_dir)}")
-    mlflow.set_experiment(args.exp_name)
+    setup_mlflow(args)
 
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -140,6 +154,7 @@ def main():
             is_best  = val_acc > best_acc
             best_acc = max(val_acc, best_acc)
 
+            # ── Checkpoint 儲存（永遠存在 save_dir 根目錄）────────────
             save_checkpoint({
                 "epoch":      epoch,
                 "state_dict": model.state_dict(),
@@ -147,6 +162,11 @@ def main():
                 "optimizer":  optimizer.state_dict(),
                 "scheduler":  scheduler.state_dict(),
             }, is_best, args.save_dir)
+
+            # 確認 checkpoint 有存到（防止 Drive 同步延遲）
+            ckpt_path = os.path.join(args.save_dir, "checkpoint.pth")
+            if not os.path.exists(ckpt_path):
+                print(f"  ⚠️  WARNING: checkpoint.pth not found after save!")
 
             # ── 寫入 training log ──────────────────────────────────
             training_log.append({
@@ -167,10 +187,11 @@ def main():
             "best_epoch":   epoch + 1,
         })
 
-        # 儲存最佳模型為 MLflow artifact
+        # ── MLflow artifact：訓練完成後才 log，不影響根目錄的 checkpoint ──
         best_ckpt = os.path.join(args.save_dir, "model_best.pth")
         if os.path.exists(best_ckpt):
             mlflow.log_artifact(best_ckpt, artifact_path="checkpoints")
+            print(f"✅ model_best.pth logged to MLflow artifacts")
 
         print(f"Training complete. Best validation accuracy: {best_acc:.2f}%")
         print(f"MLflow Run ID: {mlflow.active_run().info.run_id}")
