@@ -1,4 +1,4 @@
-# CFIRMLOps — CIFAR-100 MLOps Training System
+# CIFARMLOps — CIFAR-100 MLOps Training System
 
 > A production-oriented MLOps pipeline built on CIFAR-100, demonstrating end-to-end model training, experiment tracking, evaluation, and deployment readiness.
 
@@ -24,7 +24,7 @@ It is a progressively evolving MLOps system that demonstrates:
 ## 🗂️ Project Structure
 
 ```
-CFIRMLOps/
+CIFARMLOps/
 ├── train.py              # Training pipeline with MLflow tracking
 ├── evaluate.py           # Full evaluation module
 ├── model.py              # ResNet-18 adapted for CIFAR-100
@@ -63,8 +63,8 @@ demo.py (interactive demo)
 ### Local Environment
 
 ```bash
-git clone https://github.com/rvgoing/CFIRMLOps.git
-cd CFIRMLOps
+git clone https://github.com/rvgoing/CIFARMLOps.git
+cd CIFARMLOps
 python -m venv venv
 .\venv\Scripts\activate      # Windows
 # source venv/bin/activate   # Mac / Linux
