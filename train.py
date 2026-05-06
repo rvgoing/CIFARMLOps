@@ -182,9 +182,14 @@ def main():
             scheduler.step()
 
         # 訓練完成，記錄最終結果
+        # mlflow.log_metrics({
+        #     "best_val_acc": round(best_acc, 4),
+        #     "best_epoch":   epoch + 1,
+        # })
+        final_epoch = start_epoch if start_epoch >= args.epochs else epoch + 1
         mlflow.log_metrics({
             "best_val_acc": round(best_acc, 4),
-            "best_epoch":   epoch + 1,
+            "best_epoch":   final_epoch,
         })
 
         # ── MLflow artifact：訓練完成後才 log，不影響根目錄的 checkpoint ──
