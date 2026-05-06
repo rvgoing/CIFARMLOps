@@ -26,3 +26,4 @@ data/
 .DS_Store
 *.zip
 *.tar.gz
+colab_train2.ipynb
