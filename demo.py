@@ -60,7 +60,7 @@ TRANSFORM = transforms.Compose([
 
 def load_model(checkpoint_path, num_classes, device):
     model = get_model(num_classes=num_classes)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     model.load_state_dict(checkpoint["state_dict"])
     model = model.to(device)
     model.eval()

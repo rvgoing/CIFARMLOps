@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import warnings
+from pathlib import Path
 
 from tqdm import tqdm
 
@@ -22,7 +23,7 @@ from model import get_model
 from utils import accuracy, save_checkpoint, AverageMeter
 
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="CIFAR-100 training with PyTorch")
     parser.add_argument("--data-dir",     default="./data",        type=str,   help="Path to CIFAR-100 dataset folder")
     parser.add_argument("--epochs",       default=20,              type=int,   help="Number of training epochs")
@@ -40,7 +41,12 @@ def parse_args():
     parser.add_argument("--mlflow-dir",    default="./mlruns",  type=str, help="MLflow local tracking directory (used when --mlflow-server is not set)")
     parser.add_argument("--mlflow-server", default="",          type=str, help="MLflow tracking server URI (e.g. http://localhost:5000)")
     parser.add_argument("--exp-name",      default="CIFAR100",  type=str, help="MLflow experiment name")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.epochs < 1 or args.batch_size < 1 or args.num_workers < 0:
+        parser.error("epochs and batch-size must be positive; num-workers must be nonnegative")
+    if args.resume and not os.path.isfile(args.resume):
+        parser.error(f"Checkpoint does not exist: {args.resume}")
+    return args
 
 
 def setup_mlflow(args):
@@ -49,7 +55,9 @@ def setup_mlflow(args):
         mlflow.set_tracking_uri(args.mlflow_server)
         print(f"MLflow Tracking Server: {args.mlflow_server}")
     else:
-        mlflow.set_tracking_uri(f"file://{os.path.abspath(args.mlflow_dir)}")
+        # Explicit local-directory mode preserves existing MLflow file-store runs.
+        os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
+        mlflow.set_tracking_uri(Path(args.mlflow_dir).resolve().as_uri())
         print(f"MLflow Local Dir: {os.path.abspath(args.mlflow_dir)}")
     mlflow.set_experiment(args.exp_name)
 
@@ -92,11 +100,12 @@ def main():
 
     start_epoch = 0
     best_acc    = 0.0
+    best_epoch  = 0
 
     # ── 讀取已有的 training log（Resume 時保留歷史紀錄）──────────────
     log_path     = os.path.join(args.save_dir, "training_log.json")
     training_log = []
-    if os.path.exists(log_path):
+    if args.resume and os.path.exists(log_path):
         with open(log_path) as f:
             training_log = json.load(f)
 
@@ -104,12 +113,21 @@ def main():
     if args.resume:
         if os.path.isfile(args.resume):
             print(f"Loading checkpoint '{args.resume}'")
-            checkpoint  = torch.load(args.resume, map_location=device)
+            checkpoint  = torch.load(args.resume, map_location=device, weights_only=True)
             model.load_state_dict(checkpoint["state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer"])
             scheduler.load_state_dict(checkpoint["scheduler"])
             start_epoch = checkpoint["epoch"] + 1
             best_acc    = checkpoint["best_acc"]
+            best_epoch  = checkpoint.get("best_epoch", 0)
+            if not best_epoch and training_log:
+                history = [row for row in training_log if row["epoch"] <= start_epoch]
+                if history:
+                    best_epoch = max(history, key=lambda row: row["val_acc"])["epoch"]
+            # Old checkpoints saved the scheduler before its end-of-epoch step.
+            if checkpoint.get("format_version", 1) < 2:
+                scheduler.step()
+            training_log = [row for row in training_log if row["epoch"] <= start_epoch]
             print(f"Resumed from epoch {start_epoch}, best accuracy {best_acc:.2f}%")
         else:
             print(f"No checkpoint found at '{args.resume}'")
@@ -151,11 +169,16 @@ def main():
                 "val_acc":    round(val_acc, 4),
             }, step=epoch + 1)
 
-            is_best  = val_acc > best_acc
+            is_best  = (start_epoch == 0 and epoch == 0) or val_acc > best_acc
+            if is_best:
+                best_epoch = epoch + 1
             best_acc = max(val_acc, best_acc)
 
             # ── Checkpoint 儲存（永遠存在 save_dir 根目錄）────────────
+            scheduler.step()
             save_checkpoint({
+                "format_version": 2,
+                "best_epoch": best_epoch,
                 "epoch":      epoch,
                 "state_dict": model.state_dict(),
                 "best_acc":   best_acc,
@@ -179,17 +202,10 @@ def main():
             with open(log_path, "w") as f:
                 json.dump(training_log, f, indent=2)
 
-            scheduler.step()
-
         # 訓練完成，記錄最終結果
-        # mlflow.log_metrics({
-        #     "best_val_acc": round(best_acc, 4),
-        #     "best_epoch":   epoch + 1,
-        # })
-        final_epoch = start_epoch if start_epoch >= args.epochs else epoch + 1
         mlflow.log_metrics({
             "best_val_acc": round(best_acc, 4),
-            "best_epoch":   final_epoch,
+            "best_epoch":   best_epoch,
         })
 
         # ── MLflow artifact：訓練完成後才 log，不影響根目錄的 checkpoint ──

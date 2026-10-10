@@ -6,10 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Scheduler resume state and actual best epoch tracking.
+- Sparse-class evaluation and safe checkpoint loading.
+
+### Added
+- Offline CPU regression tests and Python 3.10/3.11 GitHub Actions.
+- Secret/artifact ignore rules and venv environment guidance.
+
 ### Planned
 - FastAPI model deployment
-- Docker containerization
-- GitHub Actions CI/CD
 - Online monitoring (Data Drift / Model Drift)
 
 ---

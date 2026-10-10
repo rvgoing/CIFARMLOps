@@ -64,7 +64,7 @@ def parse_args():
 def load_model(checkpoint_path, num_classes, device):
     print(f"Loading checkpoint: {checkpoint_path}")
     model = get_model(num_classes=num_classes)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     model.load_state_dict(checkpoint["state_dict"])
     model = model.to(device)
     model.eval()
@@ -108,14 +108,15 @@ def run_inference(loader, model, device):
 
 
 def compute_top1_top5(labels, probs):
-    top1 = top_k_accuracy_score(labels, probs, k=1) * 100
-    top5 = top_k_accuracy_score(labels, probs, k=5) * 100
+    top1 = top_k_accuracy_score(labels, probs, k=1, labels=np.arange(probs.shape[1])) * 100
+    top5 = top_k_accuracy_score(labels, probs, k=min(5, probs.shape[1]), labels=np.arange(probs.shape[1])) * 100
     return top1, top5
 
 
 def compute_per_class_accuracy(labels, preds, class_names):
-    cm = confusion_matrix(labels, preds)
-    per_class = cm.diagonal() / cm.sum(axis=1) * 100
+    cm = confusion_matrix(labels, preds, labels=np.arange(len(class_names)))
+    support = cm.sum(axis=1)
+    per_class = np.divide(cm.diagonal(), support, out=np.zeros(len(class_names), dtype=float), where=support != 0) * 100
     return {class_names[i]: round(per_class[i], 2) for i in range(len(class_names))}
 
 
@@ -159,7 +160,8 @@ def plot_loss_curve(log_path, save_dir):
 
 
 def plot_confusion_matrix(labels, preds, class_names, save_dir, top_n=20):
-    cm = confusion_matrix(labels, preds)
+    cm = confusion_matrix(labels, preds, labels=np.arange(len(class_names)))
+    top_n = min(top_n, len(class_names))
     errors  = cm.sum(axis=1) - cm.diagonal()
     top_idx = np.argsort(errors)[-top_n:][::-1]
     cm_sub  = cm[np.ix_(top_idx, top_idx)]
@@ -205,7 +207,7 @@ def plot_per_class_accuracy(per_class_acc, save_dir, bottom_n=20):
 
 
 def save_report(labels, preds, class_names, save_dir):
-    report   = classification_report(labels, preds, target_names=class_names, digits=4)
+    report   = classification_report(labels, preds, labels=np.arange(len(class_names)), target_names=class_names, digits=4, zero_division=0)
     out_path = os.path.join(save_dir, "classification_report.txt")
     with open(out_path, "w") as f:
         f.write(report)
@@ -231,6 +233,8 @@ def save_summary(top1, top5, per_class_acc, save_dir):
 
 def main():
     args = parse_args()
+    if args.num_classes != 100:
+        raise ValueError("CIFAR-100 evaluation requires --num-classes 100")
     os.makedirs(args.save_dir, exist_ok=True)
     device = torch.device(args.device)
     class_names = CIFAR100_CLASSES[:args.num_classes]

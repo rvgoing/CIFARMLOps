@@ -15,7 +15,7 @@ It is a progressively evolving MLOps system that demonstrates:
 - ✅ Comprehensive model evaluation (Top-1/5, Confusion Matrix, Per-class Accuracy, F1)
 - ✅ Cloud GPU training via Google Colab with Google Drive persistence
 - ✅ Version-controlled codebase (GitHub)
-- 🔜 Model deployment (FastAPI + Docker)
+- 🔜 Model deployment (FastAPI)
 - 🔜 CI/CD automation (GitHub Actions)
 - 🔜 Online monitoring (Model Drift Detection)
 
@@ -65,10 +65,10 @@ demo.py (interactive demo)
 ```bash
 git clone https://github.com/rvgoing/CIFARMLOps.git
 cd CIFARMLOps
-python -m venv venv
-.\venv\Scripts\activate      # Windows
-# source venv/bin/activate   # Mac / Linux
-pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\activate      # Windows
+# source .venv/bin/activate   # Mac / Linux
+python -m pip install -r requirements.txt
 ```
 
 ---
@@ -136,7 +136,7 @@ Every training run automatically records:
 ### View MLflow UI
 
 ```bash
-mlflow ui --backend-store-uri ./mlruns
+MLFLOW_ALLOW_FILE_STORE=true mlflow ui --backend-store-uri ./mlruns
 ```
 
 Open `http://localhost:5000` to compare experiments visually.
@@ -203,7 +203,7 @@ Phase 2 ✅  Experiment Tracking
 
 Phase 3 🔜  Model Deployment
             - FastAPI REST API
-            - Docker containerization
+            - venv-based service deployment
 
 Phase 4 🔜  CI/CD Automation
             - GitHub Actions triggered training
@@ -236,3 +236,33 @@ gradio
 - Default model is ResNet-18 adapted for 32×32 CIFAR-100 images (100 classes)
 - Standard CIFAR-100 normalization and data augmentation applied
 - Overfitting observed after 200 epochs (Train Acc ~99%, Val Acc ~77%) — next experiments will address this
+
+
+## Development and environment safety
+
+Use Python 3.10 or 3.11 and a project `.venv`. Keep the validated CUDA
+installation intact. In an existing environment, capture its torch/torchvision
+versions in a constraints file before resolving other dependencies; do not run
+an unconstrained upgrade. The GTX 1050 reference pair is torch 2.2.2+cu121 /
+torchvision 0.17.2+cu121 with NumPy <2. CI installs their CPU counterparts.
+
+```bash
+python -m pip install -r requirements-test.txt
+python -m pip check
+python -m pytest --cov=train --cov=evaluate --cov=model --cov=utils --cov=demo --cov-report=term-missing
+```
+
+Tests use synthetic CPU inputs and temporary MLflow/checkpoint directories;
+no CIFAR download or GPU is required. GitHub Actions runs Python 3.10/3.11.
+CUDA training and the interactive Gradio UI require separate host validation.
+Use an empty save directory for each fresh experiment to avoid old artifacts.
+Missing evaluation classes are reported with zero accuracy/support.
+Only tensor/primitive checkpoints accepted by `weights_only=True` are loaded.
+New checkpoints save the scheduler after stepping; legacy checkpoints receive
+one compatibility step during resume. Unknown legacy best epochs are reported
+as 0 unless recoverable from training history.
+
+Newer MLflow 3 releases require explicit opt-in for file tracking. Local
+`--mlflow-dir` mode sets `MLFLOW_ALLOW_FILE_STORE=true` unless already configured.
+For the UI, set the same environment variable (PowerShell: `$env:MLFLOW_ALLOW_FILE_STORE="true"`).
+Use `--mlflow-server` for a database-backed tracking server.

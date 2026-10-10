@@ -27,3 +27,17 @@ data/
 *.zip
 *.tar.gz
 colab_train2.ipynb
+# Secrets and generated artifacts
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+mlruns/
+mlartifacts/
+eval_results/
+*.ckpt
+*.onnx
+.coverage
+htmlcov/
+.pytest_cache/
