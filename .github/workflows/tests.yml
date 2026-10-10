@@ -1,0 +1,31 @@
+name: CPU tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      MLFLOW_DISABLE_TELEMETRY: "true"
+      GRADIO_ANALYTICS_ENABLED: "False"
+      DO_NOT_TRACK: "true"
+    strategy:
+      matrix:
+        python: ['3.10', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Create isolated environment
+        run: python -m venv .venv
+      - name: Install matched CPU PyTorch pair
+        run: .venv/bin/python -m pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
+      - name: Install application and test dependencies
+        run: .venv/bin/python -m pip install -r requirements.txt -r requirements-test.txt
+      - name: Check dependency consistency
+        run: .venv/bin/python -m pip check
+      - name: Run offline CPU regression tests
+        run: .venv/bin/python -m pytest --cov=train --cov=evaluate --cov=model --cov=utils --cov=demo --cov-report=term-missing
