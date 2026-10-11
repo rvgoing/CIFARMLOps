@@ -14,6 +14,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.4.0] — Training Correctness & Reproducibility
+
+### Fixed
+- `train.py` — `best_epoch` now records the epoch with the highest validation accuracy (it logged the last epoch)
+- `train.py` — Validation uses a 5k split of the training set (`--val-size`); the test set is no longer used for model selection
+- `train.py` — Short runs now decay the learning rate: default schedule is CosineAnnealingLR over `--epochs` (`--scheduler step` keeps StepLR)
+- `train.py` — Resume continues the same MLflow run instead of opening a new one
+- `train.py` — `training_log.json` is reset on fresh runs and trimmed to the checkpoint epoch on resume
+- `train.py` — Checkpoint is saved after `scheduler.step()`, so a resumed run no longer repeats one epoch at the previous learning rate
+
+### Added
+- `train.py` — `--seed` (default 42) and `--deterministic`; per-epoch reseeding makes crash + resume match an uninterrupted run
+- `train.py` — `lr` logged per epoch; `seed` and `val_size` logged as params
+
+### Note
+- Validation accuracy from 0.4.0 runs is measured on the held-out split, so it is not directly comparable to earlier `best_val_acc` values. Use `evaluate.py` (test set) to compare runs.
+
+---
+
 ## [0.3.0] — MLflow Integration
 
 ### Added

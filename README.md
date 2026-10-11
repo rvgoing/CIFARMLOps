@@ -101,6 +101,18 @@ python train.py \
 CIFAR-100 dataset is downloaded automatically on first run.  
 Checkpoints and `training_log.json` are saved to `--save-dir` after each epoch.
 
+### Validation, Schedule and Reproducibility
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--val-size` | `5000` | Images held out from the 50k training set for validation and best-model selection. The 10k test set is used only by `evaluate.py`. |
+| `--scheduler` | `cosine` | `cosine` = CosineAnnealingLR over `--epochs`; `step` = StepLR with `--step-size` (60) and `--gamma` (0.1), the pre-0.4 behaviour. |
+| `--seed` | `42` | Seeds Python, NumPy and PyTorch, fixes the train/val split, and reseeds every epoch so a resumed run matches an uninterrupted one. |
+| `--deterministic` | off | Deterministic cuDNN kernels for bit-exact GPU runs (slower). |
+
+When resuming, pass the same `--scheduler` the checkpoint was trained with. Checkpoints from before 0.4 used StepLR, so resume them with `--scheduler step`.
+A resumed job continues the same MLflow run (its run ID is stored in the checkpoint), and `training_log.json` is kept only on resume, trimmed to the checkpoint's epoch.
+
 ---
 
 ## ☁️ Google Colab Training
@@ -128,9 +140,9 @@ Every training run automatically records:
 
 | Category | Details |
 |---|---|
-| Parameters | lr, epochs, batch_size, optimizer, scheduler, model, dataset |
-| Metrics (per epoch) | train_loss, train_acc, val_loss, val_acc |
-| Final metrics | best_val_acc, best_epoch |
+| Parameters | lr, epochs, batch_size, optimizer, scheduler, seed, val_size, model, dataset |
+| Metrics (per epoch) | train_loss, train_acc, val_loss, val_acc, lr |
+| Final metrics | best_val_acc, best_epoch (the epoch with the highest val_acc) |
 | Artifacts | model_best.pth |
 
 ### View MLflow UI
